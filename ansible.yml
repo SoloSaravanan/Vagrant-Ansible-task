@@ -1,0 +1,90 @@
+---
+- hosts: dev-server
+  become: true
+  tasks:
+    - name: Backup the original YUM repo file
+      copy:
+        src: /etc/yum.repos.d/CentOS-Base.repo
+        dest: /etc/yum.repos.d/CentOS-Base.repo.bak
+        remote_src: yes
+
+    - name: Update YUM repository configuration
+      copy:
+        dest: /etc/yum.repos.d/CentOS-Base.repo
+        content: |
+          [base]
+          name=CentOS-$releasever - Base
+          mirrorlist=http://vault.centos.org/?release=$releasever&arch=$basearch&repo=os&infra=$infra
+          baseurl=http://vault.centos.org/centos/$releasever/os/$basearch/
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          #released updates
+          [updates]
+          name=CentOS-$releasever - Updates
+          mirrorlist=http://vault.centos.org/?release=$releasever&arch=$basearch&repo=updates&infra=$infra
+          baseurl=http://vault.centos.org/centos/$releasever/updates/$basearch/
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          #additional packages that may be useful
+          [extras]
+          name=CentOS-$releasever - Extras
+          mirrorlist=http://vault.centos.org/?release=$releasever&arch=$basearch&repo=extras&infra=$infra
+          baseurl=http://vault.centos.org/centos/$releasever/extras/$basearch/
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          #additional packages that extend functionality of existing packages
+          [centosplus]
+          name=CentOS-$releasever - Plus
+          mirrorlist=http://vault.centos.org/?release=$releasever&arch=$basearch&repo=centosplus&infra=$infra
+          baseurl=http://vault.centos.org/centos/$releasever/centosplus/$basearch/
+          gpgcheck=1
+          enabled=0
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+    - name: Clean YUM cache
+      command: yum clean all
+
+    - name: Make YUM cache
+      command: yum makecache
+
+    - name: Install httpd
+      yum:
+        name: httpd
+        state: present
+
+    - name: Deploy Hello World index page
+      copy:
+        content: "<h1>Hello World</h1>"
+        dest: /var/www/html/index.html
+      notify:
+        - Start Apache
+
+  handlers:
+    - name: Start Apache
+      service:
+        name: httpd
+        state: started
+        enabled: true
+
+- hosts: prod-server
+  become: true
+  tasks:
+    - name: Install Apache
+      apt:
+        name: apache2
+        state: present
+
+    - name: Fetch index.html from dev server
+      fetch:
+        src: /var/www/html/index.html
+        dest: /tmp/index.html
+        flat: yes
+      delegate_to: dev-server
+
+    - name: Copy index.html to prod server
+      copy:
+        src: /tmp/index.html
+        dest: /var/www/html/index.html
